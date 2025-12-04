@@ -5,9 +5,9 @@ from llama_cpp import Llama  # <--- Torniamo alla libreria ufficiale
 
 # --- CONFIGURAZIONE ---
 # Inserisci il tuo REPO_ID esatto qui sotto
-REPO_ID = "IL_TUO_USERNAME/IL_TUO_REPO" 
+REPO_ID = "abertekth/GGUF-Lab2" 
 # Inserisci il nome del file esatto che hai citato nell'errore
-MODEL_FILENAME = "model-3b-Q8_0.gguf"
+MODEL_FILENAME = "model-unsloth.Q4_K_M.gguf"
 
 MODEL_URL = f"https://huggingface.co/{REPO_ID}/resolve/main/{MODEL_FILENAME}"
 
