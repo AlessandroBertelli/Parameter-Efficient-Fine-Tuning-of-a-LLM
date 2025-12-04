@@ -1,4 +1,3 @@
---extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
-llama-cpp-python
 streamlit
 huggingface_hub
+ctransformers>=0.2.27

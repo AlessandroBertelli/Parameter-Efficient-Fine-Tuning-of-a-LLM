@@ -1,73 +1,47 @@
+
 import streamlit as st
-from llama_cpp import Llama
+from ctransformers import AutoModelForCausalLM
 from huggingface_hub import hf_hub_download
 
 # --- CONFIGURAZIONE ---
-# Inserisci qui il tuo Repo ID di Hugging Face e il nome del file GGUF
 REPO_ID = "ehsisi/lab2_gguf" 
 MODEL_FILENAME = "model-3b-Q8_0.gguf" # Es: unsloth.Q4_K_M.gguf
 
-st.set_page_config(page_title="Lab 2: LLM Inference", page_icon="🤖")
+st.set_page_config(page_title="Lab 2: Fast Inference", page_icon="⚡")
 
 @st.cache_resource
 def load_model():
-    """
-    Scarica e cachea il modello.
-    Questa funzione viene eseguita solo una volta all'avvio.
-    """
-    print(f"Scaricamento del modello {MODEL_FILENAME} da Hugging Face...")
+    # Scarica il modello
     model_path = hf_hub_download(repo_id=REPO_ID, filename=MODEL_FILENAME)
     
-    print("Inizializzazione Llama...")
-    # n_ctx definisce la lunghezza del contesto (input + output). 
-    # n_threads usa i core della CPU disponibili.
-    llm = Llama(
-        model_path=model_path,
-        n_ctx=2048,      
-        n_threads=2      
+    # Carica con ctransformers (Niente compilazione!)
+    # Nota: model_type="llama" funziona anche per Llama-3 nella maggior parte dei casi
+    llm = AutoModelForCausalLM.from_pretrained(
+        model_path,
+        model_type="llama",
+        context_length=2048,
+        gpu_layers=0 # Forza CPU
     )
     return llm
 
-# --- INTERFACCIA UTENTE ---
-st.title("🤖 ID2223 Lab 2: Fine-Tuned LLM")
-st.markdown("Questo modello è stato fine-tunato e convertito in GGUF per l'inferenza su CPU.")
+st.title("⚡ ID2223 Lab 2: CTransformers Edition")
 
-# Caricamento del modello (con spinner visivo)
 try:
-    with st.spinner("Caricamento del modello in corso... (richiede circa 1 minuto la prima volta)"):
+    with st.spinner("Caricamento modello... (sarà veloce!)"):
         llm = load_model()
-    st.success("Modello caricato e pronto!")
+    st.success("Modello pronto.")
 except Exception as e:
-    st.error(f"Errore nel caricamento del modello: {e}")
+    st.error(f"Errore: {e}")
 
-# Input utente
-prompt = st.text_area("Inserisci la tua richiesta:", height=100)
+prompt = st.text_area("Inserisci prompt:")
 
-if st.button("Genera Risposta"):
+if st.button("Genera"):
     if prompt:
-        with st.spinner("Generazione in corso..."):
-            # FORMATTAZIONE DEL PROMPT
-            # Nota: Llama-3 usa un formato specifico. Se usi un altro modello, adatta questo template.
-            # Questo è il formato standard ChatML/Llama-3
-            full_prompt = f"<|user|>\n{prompt}<|end|>\n<|assistant|>"
+        # Template manuale per Llama 3
+        full_prompt = f"<|user|>\n{prompt}<|end|>\n<|assistant|>"
+        
+        with st.spinner("Generazione..."):
+            # ctransformers genera testo direttamente
+            response = llm(full_prompt, max_new_tokens=256)
             
-            # INFERENZA
-            output = llm(
-                full_prompt,
-                max_tokens=256,  # Limita la lunghezza della risposta
-                stop=["<|end|>", "<|user|>"], # Token di stop per evitare che il modello parli da solo
-                echo=False,
-                temperature=0.7
-            )
-            
-            # Estrazione del testo
-            response_text = output['choices'][0]['text']
-            
-            st.markdown("### Risposta:")
-            st.write(response_text)
-    else:
-        st.warning("Per favore scrivi qualcosa prima di generare.")
-
-# Footer per soddisfare i requisiti del lab
-st.markdown("---")
-st.caption("Lab 2 - ID2223 | Fine-Tuning & Deployment")
+            st.write(response)
