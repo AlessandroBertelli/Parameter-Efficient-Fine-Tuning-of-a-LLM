@@ -1,4 +1,4 @@
 streamlit
-llama-cpp-python
+ctransformers>=0.2.27
 requests
 huggingface_hub
