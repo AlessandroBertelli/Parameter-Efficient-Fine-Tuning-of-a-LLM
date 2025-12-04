@@ -4,8 +4,8 @@ from huggingface_hub import hf_hub_download
 
 # --- CONFIGURAZIONE ---
 # Inserisci qui il tuo Repo ID di Hugging Face e il nome del file GGUF
-REPO_ID = "IL_TUO_USERNAME/IL_TUO_REPO_MODEL" 
-MODEL_FILENAME = "nome_del_tuo_modello.gguf" # Es: unsloth.Q4_K_M.gguf
+REPO_ID = "ehsisi/lab2_gguf" 
+MODEL_FILENAME = "model-3b-Q8_0.gguf" # Es: unsloth.Q4_K_M.gguf
 
 st.set_page_config(page_title="Lab 2: LLM Inference", page_icon="🤖")
 
