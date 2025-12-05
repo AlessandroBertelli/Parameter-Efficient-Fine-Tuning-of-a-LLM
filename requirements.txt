@@ -1,13 +1,8 @@
 --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/avx2
 llama-cpp-python==0.2.90
-gradio
-huggingface-hub
+numpy
 streamlit
-
-# Nuove dipendenze per RAG
-langchain-community
-langchain
-langchain-text-splitters
-faiss-cpu
-sentence-transformers
-pypdf
+huggingface_hub
+sentence-transformers>=2.7.0
+torch
+numpy

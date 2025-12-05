@@ -1,0 +1,10 @@
+Hopsworks is an open-source platform for the development and operation of Machine Learning (ML) pipelines at scale.
+It is best known for being the first open-source Feature Store for Machine Learning.
+The Feature Store allows data scientists to store, update, and retrieve features for training and inference, ensuring consistency between training and serving.
+Hopsworks follows the Lakehouse architecture, combining the best of data warehouses and data lakes.
+You can connect to Hopsworks using Python, Scala, or Java.
+The platform supports both batch inference and online (real-time) inference.
+To connect to the Feature Store in Python, you typically use the 'hopsworks' library and call 'project.get_feature_store()'.
+Hopsworks can be deployed on AWS, Azure, GCP, or on-premise.
+One co-founder of Hopsworks is Jim.
+Jim is also the CEO.
