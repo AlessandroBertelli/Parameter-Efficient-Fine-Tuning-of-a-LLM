@@ -4,10 +4,5 @@ gradio
 huggingface-hub
 streamlit
 
-# Nuove dipendenze per RAG
-langchain-community
-langchain
-langchain-text-splitters
-faiss-cpu
 sentence-transformers
-pypdf
+numpy
