@@ -140,12 +140,12 @@ if prompt := st.chat_input("Write here..."):
         context_text = "\n\n".join([d.page_content for d in docs])
         
         # 3. Prompt Augmentato
-        augmented_prompt = f"""Use the following context to answer the question. If you don't know the answer, say so clearly.
+        augmented_prompt = f"""{system_content} Use the following context to answer the question.
         
-        CONTESTO:
+        CONTEXT:
         {context_text}
         
-        DOMANDA:
+        QUESTION:
         {prompt}
         """
         
