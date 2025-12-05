@@ -120,10 +120,63 @@ if "messages" not in st.session_state:
         {"role": "system", "content": system_content}
     ]
 
+
+# --- WhatsApp-style chat CSS and rendering ---
+st.markdown("""
+<style>
+.whatsapp-chat {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 10px;
+}
+.bubble {
+    padding: 10px 16px;
+    border-radius: 18px;
+    margin-bottom: 8px;
+    display: inline-block;
+    max-width: 80%;
+    font-size: 16px;
+    position: relative;
+    word-break: break-word;
+}
+.bubble.user {
+    background: #dcf8c6;
+    color: #222;
+    align-self: flex-end;
+    float: right;
+    clear: both;
+}
+.bubble.assistant {
+    background: #fff;
+    color: #222;
+    border: 1px solid #ececec;
+    align-self: flex-start;
+    float: left;
+    clear: both;
+}
+.bubble.system {
+    background: #e9e9e9;
+    color: #888;
+    text-align: center;
+    margin: 0 auto 12px auto;
+    display: block;
+    border-radius: 12px;
+    font-size: 14px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="whatsapp-chat">', unsafe_allow_html=True)
 for message in st.session_state.messages:
-    if message["role"] != "system":
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    role = message["role"]
+    if role == "system":
+        st.markdown(f'<div class="bubble system">{message["content"]}</div>', unsafe_allow_html=True)
+    elif role == "user":
+        st.markdown(f'<div class="bubble user">{message["content"]}</div>', unsafe_allow_html=True)
+    elif role == "assistant":
+        st.markdown(f'<div class="bubble assistant">{message["content"]}</div>', unsafe_allow_html=True)
+    # Add more roles if needed
+st.markdown('</div>', unsafe_allow_html=True)
 
 if prompt := st.chat_input("Write here..."):
     st.chat_message("user").markdown(prompt)
