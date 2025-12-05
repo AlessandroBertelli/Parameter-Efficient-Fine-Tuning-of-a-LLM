@@ -16,13 +16,22 @@ st.caption("RAG System powered by Llama-3B & Hopsworks Docs")
 # @st.cache_resource è FONDAMENTALE in Streamlit:
 # impedisce di riscaricare il modello a ogni messaggio.
 
-@st.cache_resource
-def load_llm():
-    REPO_ID = "abertekth/model"
-    FILENAME = "mio-modello-q4_k_m.gguf"
+# --- CONFIGURAZIONE ---
+REPO_ID = "abertekth/model"
+FILENAME = "mio-modello-q4_k_m.gguf"
+EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2" # Modello leggero per embeddings
+# ----------------------
 
-    print(f"--- Downloading LLM: {FILENAME} ---")
-    try:
+st.set_page_config(page_title="RAG AI Cloud", page_icon="☁️")
+
+st.title("☁️ RAG - Streamlit Cloud")
+st.caption("Llama-3.2 3B Quantizzato (GGUF)")
+
+# --- CARICAMENTO MODELLO LLM ---
+@st.cache_resource
+def load_model():
+    # Mostra uno spinner mentre scarica
+    with st.spinner(f'Download the model from Hugging Face ({FILENAME})... Wait...'):
         model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME)
     except Exception as e:
         st.error(f"Error downloading model: {e}")
@@ -39,32 +48,18 @@ def load_llm():
     )
     return llm
 
+# Gestione errori di memoria (Streamlit Cloud Free ha poca RAM)
+try:
+    llm = load_model()
+except Exception as e:
+    st.error(f"Error: you could exceed the memory of Streamlit Cloud. Details: {e}")
+    st.stop()
+
+# --- CARICAMENTO MODELLO EMBEDDING ---
 @st.cache_resource
-def load_rag_system():
-    print("--- Preparing RAG System ---")
-    # IMPORTANTE: device='cpu' per evitare errore Meta Tensor su Cloud
-    embedder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2', device='cpu')
-    
-    TXT_FILE = "knowledge.txt"
-    knowledge_base = []
-    knowledge_embeddings = None
-
-    if not os.path.exists(TXT_FILE):
-        # Dati dummy se manca il file
-        text_data = "Hopsworks is a Feature Store."
-    else:
-        with open(TXT_FILE, "r", encoding="utf-8") as f:
-            text_data = f.read()
-
-    # Creiamo i chunk
-    chunks = [c.strip() for c in text_data.split('\n\n') if c.strip()]
-    
-    if chunks:
-        # Creiamo gli embeddings
-        knowledge_embeddings = embedder.encode(chunks, convert_to_tensor=False)
-        knowledge_embeddings = knowledge_embeddings / np.linalg.norm(knowledge_embeddings, axis=1, keepdims=True)
-    
-    return embedder, chunks, knowledge_embeddings
+def load_embedding_model():
+    with st.spinner('Loading the embedding model...'):
+        return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
 # --- INIZIALIZZAZIONE ---
 try:
@@ -72,35 +67,68 @@ try:
         llm = load_llm()
         embedder, knowledge_base, knowledge_embeddings = load_rag_system()
 except Exception as e:
-    st.error(f"Errore critico all'avvio: {e}")
+    st.error(f"Error to load models: {e}")
     st.stop()
 
-# -------------------------------------------------------------
-# 2. LOGICA RAG (RICERCA)
-# -------------------------------------------------------------
-def retrieve_info(query, top_k=2):
-    if knowledge_embeddings is None or len(knowledge_base) == 0:
-        return ""
+# --- SIDEBAR: GESTIONE DOCUMENTI ---
+with st.sidebar:
+    st.header("📂 Upload documents here")
+    uploaded_file = st.file_uploader("Upload a file .txt o .pdf", type=["txt", "pdf"])
     
-    # Vettorizza la domanda
-    query_emb = embedder.encode([query])
-    query_emb = query_emb / np.linalg.norm(query_emb, axis=1, keepdims=True)
-    
-    # Calcola similarità
-    scores = np.dot(knowledge_embeddings, query_emb.T).flatten()
-    top_indices = np.argsort(scores)[::-1][:top_k]
-    
-    retrieved_text = "\n\n".join([knowledge_base[i] for i in top_indices])
-    return retrieved_text
+    if uploaded_file and "vector_store" not in st.session_state:
+        with st.spinner("Indexing of the documents in progress..."):
+            try:
+                # Salva file temporaneo
+                with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+                    tmp_file.write(uploaded_file.read())
+                    tmp_file_path = tmp_file.name
 
-# -------------------------------------------------------------
-# 3. INTERFACCIA CHAT (STREAMLIT STYLE)
-# -------------------------------------------------------------
+                # Carica in base al tipo
+                if uploaded_file.name.endswith(".pdf"):
+                    loader = PyPDFLoader(tmp_file_path)
+                else:
+                    loader = TextLoader(tmp_file_path, encoding="utf-8")
+                
+                docs = loader.load()
+                
+                # Split del testo in chunk
+                text_splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=500, # Chunk piccoli per risparmiare contesto
+                    chunk_overlap=50
+                )
+                chunks = text_splitter.split_documents(docs)
+                
+                # Creazione Vector Store (FAISS)
+                vector_store = FAISS.from_documents(chunks, embeddings)
+                st.session_state.vector_store = vector_store
+                st.success(f"Indexed {len(chunks)} portions of text!")
+                
+                # Pulizia file temp
+                os.remove(tmp_file_path)
+                
+            except Exception as e:
+                st.error(f"Errore lettura file: {e}")
 
-# Inizializza la storia se non esiste
+    if st.button("Reset Chat and Memory"):
+        st.session_state.messages = [{"role": "system", "content": "You are a really useful assistant."}]
+        if "vector_store" in st.session_state:
+            del st.session_state.vector_store
+        st.rerun()
+
+# --- INTERFACCIA CHAT ---
+system_content = """You are a Retrieval-Augmented Generation (RAG) assistant.
+Your answers must be based solely and strictly on the information contained in the retrieved documents provided in the context.
+Rules:
+1. Do not use any outside knowledge, assumptions, or facts not explicitly present in the retrieved context.
+2. If the answer is not directly supported by the retrieved documents, reply with: "The provided documents do not contain enough information to answer this question."
+3. When relevant, cite the specific document sections you are using.
+4. Do not invent details, do not guess, and do not fill gaps with general world knowledge.
+5. If the user asks for information that contradicts the documents, clarify that the documents do not support that claim.
+6. Your goal is to provide accurate, context-grounded answers using only the retrieved sources."""
+
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "system", "content": "You are a helpful Hopsworks expert."}
+        {"role": "system", "content": system_content}
     ]
 
 # Mostra i messaggi precedenti (tranne il system prompt)
@@ -109,31 +137,35 @@ for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-# Input Utente
-if prompt := st.chat_input("Ask about Hopsworks..."):
-    
-    # 1. Mostra messaggio utente
+if prompt := st.chat_input("Write here..."):
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # 2. Recupera Contesto RAG
-    context = retrieve_info(prompt)
-    
-    # 3. Prepara il System Prompt Dinamico
-    system_prompt_rag = f"""
-You are a senior MLOps engineer and an expert on the Hopsworks platform.
-Answer the user's question using ONLY the context provided below.
-If the context doesn't contain the answer, say "I don't have that information in my Hopsworks knowledge base."
-Be technical but clear.
-
-CONTEXT:
-{context}
-"""
-    
-    # Creiamo una lista temporanea di messaggi per l'LLM (sostituendo il system prompt generico con quello RAG)
-    messages_for_llm = [{"role": "system", "content": system_prompt_rag}]
-    # Aggiungiamo la storia recente (ultimi 4 messaggi per risparmiare contesto)
-    messages_for_llm.extend(st.session_state.messages[1:]) 
+    # --- LOGICA RAG ---
+    context_text = ""
+    if "vector_store" in st.session_state:
+        # 1. Cerca i pezzi più rilevanti (k=3 per non saturare la RAM/Contesto)
+        retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 3})
+        docs = retriever.invoke(prompt)
+        
+        # 2. Costruisci il contesto
+        context_text = "\n\n".join([d.page_content for d in docs])
+        
+        # 3. Prompt Augmentato
+        augmented_prompt = f"""Use the following context to answer the question. If you don't know the answer, say so clearly.
+        
+        CONTESTO:
+        {context_text}
+        
+        DOMANDA:
+        {prompt}
+        """
+        
+        # Sostituiamo l'ultimo messaggio utente con quello aumentato per l'LLM (ma non nell'UI)
+        messages_for_llm = st.session_state.messages[:-1] + [{"role": "user", "content": augmented_prompt}]
+    else:
+        # Nessun documento caricato, usa chat normale
+        messages_for_llm = st.session_state.messages
 
     # 4. Genera Risposta
     with st.chat_message("assistant"):
