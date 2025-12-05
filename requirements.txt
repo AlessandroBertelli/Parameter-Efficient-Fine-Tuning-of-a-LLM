@@ -6,7 +6,6 @@ streamlit
 
 # Nuove dipendenze per RAG
 langchain-community
-langchain-huggingface
 faiss-cpu
 sentence-transformers
 pypdf
