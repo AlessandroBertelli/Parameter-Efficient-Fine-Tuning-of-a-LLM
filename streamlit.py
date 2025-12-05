@@ -1,165 +1,136 @@
-import streamlit as st
-from llama_cpp import Llama
+import gradio as gr
 from huggingface_hub import hf_hub_download
+from llama_cpp import Llama
+from sentence_transformers import SentenceTransformer
+import numpy as np
 import os
 
-import tempfile
-
-# --- LIBRERIE RAG ---
-from langchain_community.document_loaders import TextLoader, PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
-
-# --- CONFIGURAZIONE ---
+# -------------------------------------------------------------
+# 1. SETUP AND MODEL LOADING
+# -------------------------------------------------------------
 REPO_ID = "abertekth/model"
 FILENAME = "mio-modello-q4_k_m.gguf"
-EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2" # Modello leggero per embeddings
-# ----------------------
 
-st.set_page_config(page_title="Abertek AI Cloud", page_icon="☁️")
-
-st.title("☁️ Abertek AI - Streamlit Cloud")
-st.caption("Modello Llama-3.2 3B Quantizzato (GGUF)")
-
-# --- CARICAMENTO MODELLO LLM ---
-@st.cache_resource
-def load_model():
-    # Mostra uno spinner mentre scarica
-    with st.spinner(f'Scaricamento modello da Hugging Face ({FILENAME})... Attendere...'):
-        model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME)
-    
-    # Carica in RAM
-    # NOTA: Su Streamlit Cloud la CPU è limitata, usiamo thread bassi
-    llm = Llama(
-        model_path=model_path,
-        n_ctx=2048,  # Context window
-        n_threads=2, 
-        verbose=False
+print(f"--- 1. Downloading LLM: {FILENAME} ---")
+try:
+    model_path = hf_hub_download(
+        repo_id=REPO_ID, 
+        filename=FILENAME
     )
-    return llm
-
-# Gestione errori di memoria (Streamlit Cloud Free ha poca RAM)
-try:
-    llm = load_model()
 except Exception as e:
-    st.error(f"Errore: Potresti aver superato la memoria di Streamlit Cloud. Dettagli: {e}")
-    st.stop()
+    print(f"Error downloading model: {e}")
+    raise e
 
-# --- CARICAMENTO MODELLO EMBEDDING ---
-@st.cache_resource
-def load_embedding_model():
-    with st.spinner('Caricamento modello embeddings...'):
-        return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
+print("--- Loading Llama into RAM ---")
+llm = Llama(
+    model_path=model_path,
+    n_ctx=2048,         # Context window
+    n_threads=2,        # CPU threads
+    n_gpu_layers=0,     # CPU only
+    verbose=False
+)
 
-try:
-    llm = load_model()
-    embeddings = load_embedding_model()
-except Exception as e:
-    st.error(f"Errore caricamento modelli: {e}")
-    st.stop()
+# -------------------------------------------------------------
+# 2. RAG SETUP (HOPSWORKS KNOWLEDGE)
+# -------------------------------------------------------------
+print("--- 2. Preparing Hopsworks Knowledge Base ---")
 
-# --- SIDEBAR: GESTIONE DOCUMENTI ---
-with st.sidebar:
-    st.header("📂 Carica Documenti")
-    uploaded_file = st.file_uploader("Carica un file .txt o .pdf", type=["txt", "pdf"])
+TXT_FILE = "knowledge.txt"
+embedder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+
+knowledge_base = []
+knowledge_embeddings = None
+
+def load_knowledge_base():
+    global knowledge_base, knowledge_embeddings
     
-    if uploaded_file and "vector_store" not in st.session_state:
-        with st.spinner("Indicizzazione documento in corso..."):
-            try:
-                # Salva file temporaneo
-                with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
-                    tmp_file.write(uploaded_file.read())
-                    tmp_file_path = tmp_file.name
-
-                # Carica in base al tipo
-                if uploaded_file.name.endswith(".pdf"):
-                    loader = PyPDFLoader(tmp_file_path)
-                else:
-                    loader = TextLoader(tmp_file_path, encoding="utf-8")
-                
-                docs = loader.load()
-                
-                # Split del testo in chunk
-                text_splitter = RecursiveCharacterTextSplitter(
-                    chunk_size=500, # Chunk piccoli per risparmiare contesto
-                    chunk_overlap=50
-                )
-                chunks = text_splitter.split_documents(docs)
-                
-                # Creazione Vector Store (FAISS)
-                vector_store = FAISS.from_documents(chunks, embeddings)
-                st.session_state.vector_store = vector_store
-                st.success(f"Indicizzato {len(chunks)} porzioni di testo!")
-                
-                # Pulizia file temp
-                os.remove(tmp_file_path)
-                
-            except Exception as e:
-                st.error(f"Errore lettura file: {e}")
-
-    if st.button("Reset Chat e Memoria"):
-        st.session_state.messages = [{"role": "system", "content": "Sei un assistente utile."}]
-        if "vector_store" in st.session_state:
-            del st.session_state.vector_store
-        st.rerun()
-
-# --- INTERFACCIA CHAT ---
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "system", "content": "Sei un assistente utile che risponde basandosi sul contesto fornito."}
-    ]
-
-for message in st.session_state.messages:
-    if message["role"] != "system":
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-if prompt := st.chat_input("Scrivi qui..."):
-    st.chat_message("user").markdown(prompt)
-    st.session_state.messages.append({"role": "user", "content": prompt})
-
-    # --- LOGICA RAG ---
-    context_text = ""
-    if "vector_store" in st.session_state:
-        # 1. Cerca i pezzi più rilevanti (k=3 per non saturare la RAM/Contesto)
-        retriever = st.session_state.vector_store.as_retriever(search_kwargs={"k": 3})
-        docs = retriever.invoke(prompt)
-        
-        # 2. Costruisci il contesto
-        context_text = "\n\n".join([d.page_content for d in docs])
-        
-        # 3. Prompt Augmentato
-        augmented_prompt = f"""Usa il seguente contesto per rispondere alla domanda. Se non sai la risposta, dillo chiaramente.
-        
-        CONTESTO:
-        {context_text}
-        
-        DOMANDA:
-        {prompt}
-        """
-        
-        # Sostituiamo l'ultimo messaggio utente con quello aumentato per l'LLM (ma non nell'UI)
-        messages_for_llm = st.session_state.messages[:-1] + [{"role": "user", "content": augmented_prompt}]
+    if not os.path.exists(TXT_FILE):
+        print(f"Warning: {TXT_FILE} not found. Creating dummy Hopsworks data.")
+        text_data = "Hopsworks is a Feature Store for Machine Learning."
     else:
-        # Nessun documento caricato, usa chat normale
-        messages_for_llm = st.session_state.messages
+        with open(TXT_FILE, "r", encoding="utf-8") as f:
+            text_data = f.read()
 
-    with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        full_response = ""
-        
-        # Generazione
-        stream = llm.create_chat_completion(
-            messages=messages_for_llm,
-            stream=True,
-            max_tokens=512,
-            temperature=0.7
-        )
-        
-        for chunk in stream:
-            if "content" in chunk["choices"][0]["delta"]:
-                full_response += chunk["choices"][0]["delta"]["content"]
-                message_placeholder.markdown(full_response + "▌")
+    # Split text into paragraphs
+    chunks = [c.strip() for c in text_data.split('\n\n') if c.strip()]
+    knowledge_base = chunks
+    print(f"Loaded {len(chunks)} chunks of Hopsworks info.")
     
-    st.session_state.messages.append({"role": "assistant", "content": full_response})
+    if chunks:
+        knowledge_embeddings = embedder.encode(chunks, convert_to_tensor=False)
+        knowledge_embeddings = knowledge_embeddings / np.linalg.norm(knowledge_embeddings, axis=1, keepdims=True)
+
+load_knowledge_base()
+
+def retrieve_info(query, top_k=2):
+    """Finds the most relevant info about Hopsworks"""
+    if knowledge_embeddings is None or len(knowledge_base) == 0:
+        return ""
+    
+    query_emb = embedder.encode([query])
+    query_emb = query_emb / np.linalg.norm(query_emb, axis=1, keepdims=True)
+    
+    scores = np.dot(knowledge_embeddings, query_emb.T).flatten()
+    top_indices = np.argsort(scores)[::-1][:top_k]
+    
+    retrieved_text = "\n\n".join([knowledge_base[i] for i in top_indices])
+    return retrieved_text
+
+# -------------------------------------------------------------
+# 3. CHAT RESPONSE LOGIC
+# -------------------------------------------------------------
+def respond(message, history):
+    
+    # A. Retrieve context
+    context = retrieve_info(message)
+    
+    # B. System Prompt: Hopsworks Expert Persona
+    system_prompt = f"""
+You are a senior MLOps engineer and an expert on the Hopsworks platform.
+Answer the user's question using ONLY the context provided below.
+If the context doesn't contain the answer, say "I don't have that information in my Hopsworks knowledge base."
+Be technical but clear.
+
+CONTEXT:
+{context}
+"""
+
+    messages = [{"role": "system", "content": system_prompt}]
+    
+    for user_msg, bot_msg in history:
+        messages.append({"role": "user", "content": user_msg})
+        messages.append({"role": "assistant", "content": bot_msg})
+
+    messages.append({"role": "user", "content": message})
+
+    response_iter = llm.create_chat_completion(
+        messages=messages,
+        stream=True,
+        max_tokens=512,
+        temperature=0.5, # Low temp for technical accuracy
+    )
+    
+    partial_message = ""
+    for chunk in response_iter:
+        if "content" in chunk["choices"][0]["delta"]:
+            token = chunk["choices"][0]["delta"]["content"]
+            partial_message += token
+            yield partial_message
+
+# -------------------------------------------------------------
+# 4. USER INTERFACE
+# -------------------------------------------------------------
+demo = gr.ChatInterface(
+    fn=respond,
+    title="🟢 Hopsworks Expert AI",
+    description=f"Ask me anything about the Hopsworks Feature Store. Powered by RAG + Llama-3B.",
+    examples=[
+        "What is Hopsworks?", 
+        "How do I connect to the Feature Store?", 
+        "Can I use it for real-time inference?"
+    ],
+    cache_examples=False
+)
+
+if __name__ == "__main__":
+    demo.launch()
