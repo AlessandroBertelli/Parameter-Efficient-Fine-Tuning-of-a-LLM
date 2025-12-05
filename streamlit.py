@@ -17,16 +17,16 @@ FILENAME = "mio-modello-q4_k_m.gguf"
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2" # Modello leggero per embeddings
 # ----------------------
 
-st.set_page_config(page_title="Abertek AI Cloud", page_icon="☁️")
+st.set_page_config(page_title="RAG AI Cloud", page_icon="☁️")
 
-st.title("☁️ Abertek AI - Streamlit Cloud")
-st.caption("Modello Llama-3.2 3B Quantizzato (GGUF)")
+st.title("☁️ RAG - Streamlit Cloud")
+st.caption("Llama-3.2 3B Quantizzato (GGUF)")
 
 # --- CARICAMENTO MODELLO LLM ---
 @st.cache_resource
 def load_model():
     # Mostra uno spinner mentre scarica
-    with st.spinner(f'Scaricamento modello da Hugging Face ({FILENAME})... Attendere...'):
+    with st.spinner(f'Download the model from Hugging Face ({FILENAME})... Wait...'):
         model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME)
     
     # Carica in RAM
@@ -43,29 +43,29 @@ def load_model():
 try:
     llm = load_model()
 except Exception as e:
-    st.error(f"Errore: Potresti aver superato la memoria di Streamlit Cloud. Dettagli: {e}")
+    st.error(f"Error: you could exceed the memory of Streamlit Cloud. Details: {e}")
     st.stop()
 
 # --- CARICAMENTO MODELLO EMBEDDING ---
 @st.cache_resource
 def load_embedding_model():
-    with st.spinner('Caricamento modello embeddings...'):
+    with st.spinner('Loading the embedding model...'):
         return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
 try:
     llm = load_model()
     embeddings = load_embedding_model()
 except Exception as e:
-    st.error(f"Errore caricamento modelli: {e}")
+    st.error(f"Error to load models: {e}")
     st.stop()
 
 # --- SIDEBAR: GESTIONE DOCUMENTI ---
 with st.sidebar:
-    st.header("📂 Carica Documenti")
-    uploaded_file = st.file_uploader("Carica un file .txt o .pdf", type=["txt", "pdf"])
+    st.header("📂 Upload documents here")
+    uploaded_file = st.file_uploader("Upload a file .txt o .pdf", type=["txt", "pdf"])
     
     if uploaded_file and "vector_store" not in st.session_state:
-        with st.spinner("Indicizzazione documento in corso..."):
+        with st.spinner("Indexing of the documents in progress..."):
             try:
                 # Salva file temporaneo
                 with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
@@ -90,7 +90,7 @@ with st.sidebar:
                 # Creazione Vector Store (FAISS)
                 vector_store = FAISS.from_documents(chunks, embeddings)
                 st.session_state.vector_store = vector_store
-                st.success(f"Indicizzato {len(chunks)} porzioni di testo!")
+                st.success(f"Indexed {len(chunks)} portions of text!")
                 
                 # Pulizia file temp
                 os.remove(tmp_file_path)
@@ -98,26 +98,26 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"Errore lettura file: {e}")
 
-    if st.button("Reset Chat e Memoria"):
-        st.session_state.messages = [{"role": "system", "content": "Sei un assistente utile."}]
+    if st.button("Reset Chat and Memory"):
+        st.session_state.messages = [{"role": "system", "content": "You are a really useful assistant."}]
         if "vector_store" in st.session_state:
             del st.session_state.vector_store
         st.rerun()
 
 # --- INTERFACCIA CHAT ---
-system_prompt = """You are a Retrieval-Augmented Generation (RAG) assistant.
+system_content = """You are a Retrieval-Augmented Generation (RAG) assistant.
 Your answers must be based solely and strictly on the information contained in the retrieved documents provided in the context.
 Rules:
-Do not use any outside knowledge, assumptions, or facts not explicitly present in the retrieved context.
-If the answer is not directly supported by the retrieved documents, reply with: "The provided documents do not contain enough information to answer this question."
-When relevant, cite the specific document sections you are using.
-Do not invent details, do not guess, and do not fill gaps with general world knowledge.
-If the user asks for information that contradicts the documents, clarify that the documents do not support that claim.
-Your goal is to provide accurate, context-grounded answers using only the retrieved sources."""
+1. Do not use any outside knowledge, assumptions, or facts not explicitly present in the retrieved context.
+2. If the answer is not directly supported by the retrieved documents, reply with: "The provided documents do not contain enough information to answer this question."
+3. When relevant, cite the specific document sections you are using.
+4. Do not invent details, do not guess, and do not fill gaps with general world knowledge.
+5. If the user asks for information that contradicts the documents, clarify that the documents do not support that claim.
+6. Your goal is to provide accurate, context-grounded answers using only the retrieved sources."""
 
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "system", "content": system_prompt}
+        {"role": "system", "content": system_content}
     ]
 
 for message in st.session_state.messages:
@@ -125,7 +125,7 @@ for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-if prompt := st.chat_input("Scrivi qui..."):
+if prompt := st.chat_input("Write here..."):
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
@@ -140,7 +140,7 @@ if prompt := st.chat_input("Scrivi qui..."):
         context_text = "\n\n".join([d.page_content for d in docs])
         
         # 3. Prompt Augmentato
-        augmented_prompt = f"""Usa il seguente contesto per rispondere alla domanda. Se non sai la risposta, dillo chiaramente.
+        augmented_prompt = f"""Use the following context to answer the question. If you don't know the answer, say so clearly.
         
         CONTESTO:
         {context_text}
