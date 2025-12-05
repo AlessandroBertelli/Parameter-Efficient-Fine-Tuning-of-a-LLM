@@ -1,88 +1,61 @@
-import streamlit as st
-import os
-import requests
-from llama_cpp import Llama  # <--- Torniamo alla libreria ufficiale
+import gradio as gr
+from huggingface_hub import hf_hub_download
+from llama_cpp import Llama
 
-# --- CONFIGURAZIONE ---
-# Inserisci il tuo REPO_ID esatto qui sotto
-REPO_ID = "abertekth/GGUF-Lab2" 
-# Inserisci il nome del file esatto che hai citato nell'errore
-MODEL_FILENAME = "model-unsloth.Q4_K_M.gguf"
+REPO_ID = "abertekth/model"
+FILENAME = "mio-modello-q4_k_m.gguf"
 
-MODEL_URL = f"https://huggingface.co/{REPO_ID}/resolve/main/{MODEL_FILENAME}"
+print(f"Downloading {FILENAME} from {REPO_ID}...")
+model_path = hf_hub_download(
+    repo_id=REPO_ID, 
+    filename=FILENAME
+)
+print(f"Model downloaded to: {model_path}")
 
-st.set_page_config(page_title="Lab 2: Llama CPP", page_icon="🦙")
+llm = Llama(
+    model_path=model_path,
+    n_gpu_layers=0,        # Use 0 for CPU-only Spaces
+    n_ctx=4096,            # Context window
+    n_threads=2,           # Align with the 2 vCPUs on the free tier
+    verbose=False
+)
+print("Model loaded successfully!")
 
-def download_model_with_progress(url, dest_path):
-    if os.path.exists(dest_path):
-        st.info(f"✅ Modello trovato: {dest_path}")
-        return
-
-    st.write(f"⏳ Inizio download da Hugging Face...")
-    try:
-        response = requests.get(url, stream=True)
-        total_size = int(response.headers.get('content-length', 0))
-        
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        downloaded_size = 0
-        chunk_size = 1024 * 1024 # 1MB
-        
-        with open(dest_path, "wb") as file:
-            for data in response.iter_content(chunk_size):
-                file.write(data)
-                downloaded_size += len(data)
-                if total_size > 0:
-                    percent = downloaded_size / total_size
-                    progress_bar.progress(min(percent, 1.0))
-                    mb_cur = downloaded_size / (1024 * 1024)
-                    mb_tot = total_size / (1024 * 1024)
-                    status_text.text(f"Scaricamento: {mb_cur:.1f} MB / {mb_tot:.1f} MB")
-        
-        status_text.success("Download completato!")
-        progress_bar.empty()
-    except Exception as e:
-        st.error(f"Errore durante il download: {e}")
-
-@st.cache_resource
-def load_model():
-    model_local_path = MODEL_FILENAME
+def chat_response(message, history):
     
-    # 1. Scarica
-    download_model_with_progress(MODEL_URL, model_local_path)
+    system_prompt = "You are a helpful and detailed assistant. Your name is José."
     
-    # 2. Carica con llama-cpp-python
-    # Questo funziona con tutti i GGUF moderni
-    print("Inizializzazione Llama...")
-    llm = Llama(
-        model_path=model_local_path,
-        n_ctx=512,        # Manteniamo basso per la RAM
-        n_threads=2,      # CPU cores
-        verbose=True
+    messages = [{"role": "system", "content": system_prompt}]
+    
+    # Add history
+    for human, assistant in history:
+        messages.append({"role": "user", "content": human})
+        messages.append({"role": "assistant", "content": assistant})
+        
+    messages.append({"role": "user", "content": message})
+
+    # Generate response
+    response = llm.create_chat_completion(
+        messages=messages,
+        max_tokens=256,
+        temperature=0.7,
+        stream=True  
     )
-    return llm
-
-st.title("🦙 Lab 2: 3B Model UI")
-
-try:
-    llm = load_model()
-    st.success("Modello caricato con successo!")
-
-    prompt = st.text_area("Scrivi il tuo prompt:")
     
-    if st.button("Genera"):
-        if prompt:
-            # Template standard
-            full_prompt = f"<|user|>\n{prompt}<|end|>\n<|assistant|>"
-            with st.spinner("Generazione..."):
-                output = llm(
-                    full_prompt, 
-                    max_tokens=256, 
-                    stop=["<|end|>"], 
-                    echo=False
-                )
-                st.write(output['choices'][0]['text'])
+    partial_message = ""
+    for chunk in response:
+        if 'content' in chunk['choices'][0]['delta']:
+            text_chunk = chunk['choices'][0]['delta']['content']
+            partial_message += text_chunk
+            yield partial_message
 
-except Exception as e:
-    st.error(f"Errore critico: {e}")
+demo = gr.ChatInterface(
+    fn=chat_response,
+    title="ID2223 FineLlama Chat (GGUF)",
+    description="Chat with the fine-tuned Llama-3.1-8B model running on CPU via llama.cpp.",
+    examples=["Tell me about ID2223.", "Who are you?", "Explain quantization."],
+    cache_examples=False
+)
+
+if __name__ == "__main__":
+    demo.launch()
