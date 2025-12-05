@@ -3,3 +3,10 @@ llama-cpp-python==0.2.90
 gradio
 huggingface-hub
 streamlit
+
+# Nuove dipendenze per RAG
+langchain-community
+langchain-huggingface
+faiss-cpu
+sentence-transformers
+pypdf
