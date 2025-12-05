@@ -15,6 +15,15 @@ from langchain_community.vectorstores import FAISS
 REPO_ID = "abertekth/model"
 FILENAME = "mio-modello-q4_k_m.gguf"
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2" # Modello leggero per embeddings
+system_content = """You are a Retrieval-Augmented Generation (RAG) assistant.
+Your answers must be based solely and strictly on the information contained in the retrieved documents provided in the context.
+Rules:
+1. Do not use any outside knowledge, assumptions, or facts not explicitly present in the retrieved context.
+2. If the answer is not directly supported by the retrieved documents, reply with: "The provided documents do not contain enough information to answer this question."
+3. When relevant, cite the specific document sections you are using.
+4. Do not invent details, do not guess, and do not fill gaps with general world knowledge.
+5. If the user asks for information that contradicts the documents, clarify that the documents do not support that claim.
+6. Your goal is to provide accurate, context-grounded answers using only the retrieved sources."""
 # ----------------------
 
 st.set_page_config(page_title="RAG AI Cloud", page_icon="☁️")
@@ -99,22 +108,12 @@ with st.sidebar:
                 st.error(f"Errore lettura file: {e}")
 
     if st.button("Reset Chat and Memory"):
-        st.session_state.messages = [{"role": "system", "content": "You are a really useful assistant."}]
+        st.session_state.messages = [{"role": "system", "content": system_content}]
         if "vector_store" in st.session_state:
             del st.session_state.vector_store
         st.rerun()
 
 # --- INTERFACCIA CHAT ---
-system_content = """You are a Retrieval-Augmented Generation (RAG) assistant.
-Your answers must be based solely and strictly on the information contained in the retrieved documents provided in the context.
-Rules:
-1. Do not use any outside knowledge, assumptions, or facts not explicitly present in the retrieved context.
-2. If the answer is not directly supported by the retrieved documents, reply with: "The provided documents do not contain enough information to answer this question."
-3. When relevant, cite the specific document sections you are using.
-4. Do not invent details, do not guess, and do not fill gaps with general world knowledge.
-5. If the user asks for information that contradicts the documents, clarify that the documents do not support that claim.
-6. Your goal is to provide accurate, context-grounded answers using only the retrieved sources."""
-
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "system", "content": system_content}
