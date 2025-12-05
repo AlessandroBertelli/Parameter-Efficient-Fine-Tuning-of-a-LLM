@@ -36,7 +36,7 @@ llm = Llama(
 print("--- 2. Preparing Hopsworks Knowledge Base ---")
 
 TXT_FILE = "knowledge.txt"
-embedder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+embedder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2', device='cpu')
 
 knowledge_base = []
 knowledge_embeddings = None
