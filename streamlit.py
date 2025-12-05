@@ -130,4 +130,30 @@ CONTEXT:
 {context}
 """
     
-    # Creiamo una lista temporanea di messaggi per l'LLM (
+    # Creiamo una lista temporanea di messaggi per l'LLM (sostituendo il system prompt generico con quello RAG)
+    messages_for_llm = [{"role": "system", "content": system_prompt_rag}]
+    # Aggiungiamo la storia recente (ultimi 4 messaggi per risparmiare contesto)
+    messages_for_llm.extend(st.session_state.messages[1:]) 
+
+    # 4. Genera Risposta
+    with st.chat_message("assistant"):
+        message_placeholder = st.empty()
+        full_response = ""
+        
+        stream = llm.create_chat_completion(
+            messages=messages_for_llm,
+            stream=True,
+            max_tokens=512,
+            temperature=0.5
+        )
+        
+        for chunk in stream:
+            if "content" in chunk["choices"][0]["delta"]:
+                token = chunk["choices"][0]["delta"]["content"]
+                full_response += token
+                message_placeholder.markdown(full_response + "▌")
+        
+        message_placeholder.markdown(full_response)
+    
+    # Salva nella storia
+    st.session_state.messages.append({"role": "assistant", "content": full_response})
