@@ -1,6 +1,5 @@
 --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/avx2
 llama-cpp-python==0.2.90
-gradio
 huggingface-hub
 streamlit
 
