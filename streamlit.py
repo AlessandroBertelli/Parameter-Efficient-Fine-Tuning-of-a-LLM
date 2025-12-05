@@ -1,20 +1,15 @@
 import streamlit as st
 from llama_cpp import Llama
 from huggingface_hub import hf_hub_download
-from sentence_transformers import SentenceTransformer
-import numpy as np
 import os
 
-# --- CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="Hopsworks Expert AI", page_icon="🟢")
-st.title("🟢 Hopsworks Expert AI")
-st.caption("RAG System powered by Llama-3B & Hopsworks Docs")
+import tempfile
 
-# -------------------------------------------------------------
-# 1. FUNZIONI DI CARICAMENTO (CACHED)
-# -------------------------------------------------------------
-# @st.cache_resource è FONDAMENTALE in Streamlit:
-# impedisce di riscaricare il modello a ogni messaggio.
+# --- LIBRERIE RAG ---
+from langchain_community.document_loaders import TextLoader, PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
 
 # --- CONFIGURAZIONE ---
 REPO_ID = "abertekth/model"
@@ -33,17 +28,13 @@ def load_model():
     # Mostra uno spinner mentre scarica
     with st.spinner(f'Download the model from Hugging Face ({FILENAME})... Wait...'):
         model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME)
-    except Exception as e:
-        st.error(f"Error downloading model: {e}")
-        st.stop()
-
-    print("--- Loading Llama into RAM ---")
-    # Carichiamo il modello
+    
+    # Carica in RAM
+    # NOTA: Su Streamlit Cloud la CPU è limitata, usiamo thread bassi
     llm = Llama(
         model_path=model_path,
-        n_ctx=2048,         
-        n_threads=2,        
-        n_gpu_layers=0,     # CPU only
+        n_ctx=2048,  # Context window
+        n_threads=2, 
         verbose=False
     )
     return llm
@@ -61,11 +52,9 @@ def load_embedding_model():
     with st.spinner('Loading the embedding model...'):
         return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
-# --- INIZIALIZZAZIONE ---
 try:
-    with st.spinner("Caricamento del cervello AI in corso..."):
-        llm = load_llm()
-        embedder, knowledge_base, knowledge_embeddings = load_rag_system()
+    llm = load_model()
+    embeddings = load_embedding_model()
 except Exception as e:
     st.error(f"Error to load models: {e}")
     st.stop()
@@ -131,7 +120,6 @@ if "messages" not in st.session_state:
         {"role": "system", "content": system_content}
     ]
 
-# Mostra i messaggi precedenti (tranne il system prompt)
 for message in st.session_state.messages:
     if message["role"] != "system":
         with st.chat_message(message["role"]):
@@ -167,25 +155,21 @@ if prompt := st.chat_input("Write here..."):
         # Nessun documento caricato, usa chat normale
         messages_for_llm = st.session_state.messages
 
-    # 4. Genera Risposta
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         full_response = ""
         
+        # Generazione
         stream = llm.create_chat_completion(
             messages=messages_for_llm,
             stream=True,
             max_tokens=512,
-            temperature=0.5
+            temperature=0.7
         )
         
         for chunk in stream:
             if "content" in chunk["choices"][0]["delta"]:
-                token = chunk["choices"][0]["delta"]["content"]
-                full_response += token
+                full_response += chunk["choices"][0]["delta"]["content"]
                 message_placeholder.markdown(full_response + "▌")
-        
-        message_placeholder.markdown(full_response)
     
-    # Salva nella storia
     st.session_state.messages.append({"role": "assistant", "content": full_response})
