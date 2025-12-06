@@ -1,10 +1,10 @@
 --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/avx2
-llama-cpp-python==0.2.90
+llama-cpp-python==0.2.90. # Important to specify the version, otherwise it will load for an infinite time
 gradio
 huggingface-hub
 streamlit
 
-# Nuove dipendenze per RAG
+# RAG dependencies
 langchain-community
 langchain
 langchain-text-splitters
